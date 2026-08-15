@@ -2,9 +2,10 @@ import asyncio
 import sqlite3
 import os
 from datetime import datetime, timedelta
-from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram import Bot, Dispatcher, types
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import filters
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 import logging
@@ -21,7 +22,8 @@ if not TOKEN:
 
 # СОЗДАЁМ БОТА
 bot = Bot(token=TOKEN)
-dp = Dispatcher()
+storage = MemoryStorage()
+dp = Dispatcher(bot, storage=storage)
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 
 # БАЗА ДАННЫХ
@@ -49,7 +51,7 @@ def init_db():
     """)
     conn.commit()
     conn.close()
-    print(f"✅ База данных создана")
+    print("✅ База данных создана")
 
 async def send_reminder(user_id: int, title: str, text: str):
     try:
@@ -116,8 +118,8 @@ def load_reminders_into_scheduler():
                     args=[user_id, name, "Тур"]
                 )
 
-@dp.message(CommandStart())
-async def cmd_start(message: Message):
+@dp.message_handler(commands=['start'])
+async def cmd_start(message: types.Message):
     await message.reply(
         "👋 Привет! Я твой олимпиадный помощник!\n\n"
         "➕ <b>Как добавить олимпиаду:</b>\n"
@@ -129,8 +131,8 @@ async def cmd_start(message: Message):
         parse_mode="HTML"
     )
 
-@dp.message(Command("add"))
-async def cmd_add(message: Message):
+@dp.message_handler(commands=['add'])
+async def cmd_add(message: types.Message):
     try:
         parts = message.text.split("/add ")[1].split("|")
         name = parts[0].strip()
@@ -160,8 +162,8 @@ async def cmd_add(message: Message):
             parse_mode="HTML"
         )
 
-@dp.message(Command("list"))
-async def cmd_list(message: Message):
+@dp.message_handler(commands=['list'])
+async def cmd_list(message: types.Message):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, category FROM olymps ORDER BY name")
@@ -186,14 +188,14 @@ async def cmd_list(message: Message):
     
     await message.reply(
         "📅 <b>Твои олимпиады:</b>\n✅ - подписан, ❌ - не подписан",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons),
+        reply_markup=InlineKeyboardMarkup(row_width=1, inline_keyboard=keyboard_buttons),
         parse_mode="HTML"
     )
 
-@dp.callback_query(F.data.startswith("toggle_"))
-async def toggle_subscription(callback: CallbackQuery):
-    olymp_id = int(callback.data.split("_")[1])
-    user_id = callback.message.chat.id
+@dp.callback_query_handler(lambda c: c.data and c.data.startswith("toggle_"))
+async def toggle_subscription(callback_query: types.CallbackQuery):
+    olymp_id = int(callback_query.data.split("_")[1])
+    user_id = callback_query.message.chat.id
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -225,11 +227,11 @@ async def toggle_subscription(callback: CallbackQuery):
         ])
     
     load_reminders_into_scheduler()
-    await callback.answer(txt)
-    await callback.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons))
+    await callback_query.answer(txt)
+    await callback_query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(row_width=1, inline_keyboard=keyboard_buttons))
 
-@dp.message(Command("view"))
-async def cmd_view(message: Message):
+@dp.message_handler(commands=['view'])
+async def cmd_view(message: types.Message):
     try:
         olymp_id = int(message.text.split()[1])
         conn = sqlite3.connect(DB_PATH)
@@ -253,8 +255,8 @@ async def cmd_view(message: Message):
     except:
         await message.reply("❌ Используй: `/view ID`", parse_mode="HTML")
 
-@dp.message(Command("delete"))
-async def cmd_delete(message: Message):
+@dp.message_handler(commands=['delete'])
+async def cmd_delete(message: types.Message):
     try:
         olymp_id = int(message.text.split()[1])
         conn = sqlite3.connect(DB_PATH)
@@ -279,8 +281,8 @@ async def cmd_delete(message: Message):
     except:
         await message.reply("❌ Используй: `/delete ID`", parse_mode="HTML")
 
-@dp.message(Command("help"))
-async def cmd_help(message: Message):
+@dp.message_handler(commands=['help'])
+async def cmd_help(message: types.Message):
     help_text = """
 🤖 <b>Я - бот-напоминалка для олимпиад!</b>
 
@@ -314,16 +316,7 @@ async def main():
     load_reminders_into_scheduler()
     scheduler.start()
     print("🤖 БОТ ЗАПУЩЕН!")
-    await dp.start_polling(bot)
+    await dp.start_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-
-
-
-
-
-
-
