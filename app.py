@@ -1,6 +1,8 @@
 import asyncio
 import sqlite3
 import os
+import threading
+import time
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
@@ -316,7 +318,7 @@ async def cmd_delete(message: Message):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
-        cursor.execute("SELECT name FROM olymps WHERE id = ?", (olymps_id,))
+        cursor.execute("SELECT name FROM olymps WHERE id = ?", (olymp_id,))
         result = cursor.fetchone()
         if not result:
             await message.reply("❌ Олимпиада не найдена")
@@ -490,7 +492,7 @@ async def cmd_export(message: Message):
         caption="📤 Вот твой список олимпиад!"
     )
 
-# ========== ЗАПУСК БОТА И ВЕБ-СЕРВЕРА ==========
+# ========== ГЛАВНАЯ ФУНКЦИЯ ==========
 
 async def run_bot():
     init_db()
@@ -499,12 +501,16 @@ async def run_bot():
     print("🤖 БОТ ЗАПУЩЕН!")
     await dp.start_polling(bot)
 
-# Запускаем бота в фоновом режиме
-import threading
-threading.Thread(target=lambda: asyncio.run(run_bot()), daemon=True).start()
+# ========== НОВЫЙ ПРАВИЛЬНЫЙ ЗАПУСК ==========
 
-# Запускаем веб-сервер
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    print(f"🌐 Веб-сервер запущен на порту {port}")
-    app.run(host="0.0.0.0", port=port)
+    # Запускаем Flask в отдельном потоке
+    def run_flask():
+        port = int(os.environ.get("PORT", 8080))
+        app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
+    # Запускаем бота в главном потоке
+    asyncio.run(run_bot())
